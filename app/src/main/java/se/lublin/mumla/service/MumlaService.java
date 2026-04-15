@@ -179,9 +179,8 @@ public class MumlaService extends HumlaService implements
                                     isReconnecting(), MumlaService.this);
                 }
             } else {
-                // User-initiated disconnect — clear restore state.
-                mShouldRestoreChannel = false;
-                mLastChannelId = -1;
+                // User-initiated disconnect — remember channel so we can restore on next connect.
+                mShouldRestoreChannel = true;
             }
         }
 
@@ -360,17 +359,6 @@ public class MumlaService extends HumlaService implements
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && HumlaService.ACTION_CONNECT.equals(intent.getAction())) {
-            // The user is explicitly connecting to a (possibly different) server.
-            // Reset channel-restore state so we don't try to join a stale channel.
-            mShouldRestoreChannel = false;
-            mLastChannelId = -1;
-        }
-        return super.onStartCommand(intent, flags, startId);
-    }
-
-    @Override
     public IBinder onBind(Intent intent) {
         return new MumlaBinder(this);
     }
@@ -537,6 +525,12 @@ public class MumlaService extends HumlaService implements
                 break;
             case Settings.PREF_FRAMES_PER_PACKET:
                 changedExtras.putInt(EXTRAS_FRAMES_PER_PACKET, mSettings.getFramesPerPacket());
+                break;
+            case Settings.PREF_AUTO_RECONNECT:
+                // If the user just disabled auto-reconnect, cancel any in-progress Humla retry.
+                if (!mSettings.isAutoReconnectEnabled() && isReconnecting()) {
+                    cancelReconnect();
+                }
                 break;
             case Settings.PREF_CERT_ID:
             case Settings.PREF_FORCE_TCP:
