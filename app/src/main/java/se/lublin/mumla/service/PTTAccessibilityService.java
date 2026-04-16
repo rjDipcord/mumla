@@ -18,6 +18,7 @@
 package se.lublin.mumla.service;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Intent;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
@@ -37,6 +38,16 @@ import se.lublin.mumla.Settings;
  * The user must enable this service once in Settings → Accessibility → Mumla PTT.
  */
 public class PTTAccessibilityService extends AccessibilityService {
+
+    @Override
+    protected void onServiceConnected() {
+        // This service only needs key events, not UI/window accessibility events.
+        // Setting eventTypes to 0 here avoids the need for the now-invalid "typeNone"
+        // XML attribute that AAPT2 rejects.
+        AccessibilityServiceInfo info = getServiceInfo();
+        info.eventTypes = 0;
+        setServiceInfo(info);
+    }
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
