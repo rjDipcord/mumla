@@ -23,6 +23,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -37,6 +39,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.widget.Toast;
 
 import androidx.preference.PreferenceManager;
@@ -87,6 +90,14 @@ public class MumlaService extends HumlaService implements
     private MumlaOverlay mChannelOverlay;
     /** Proximity lock for handset mode. */
     private PowerManager.WakeLock mProximityLock;
+    /**
+     * Partial wake lock held while connected. Keeps the CPU alive so that PTT key events
+     * (routed via the MediaSession) can be processed when the screen is off or the app is
+     * in the background.
+     */
+    private PowerManager.WakeLock mPTTWakeLock;
+    /** MediaSession used to receive hardware PTT key events in the background / screen-off. */
+    private MediaSession mMediaSession;
     /** Play sound when push to talk key is pressed */
     private boolean mPTTSoundEnabled;
     /** Try to shorten spoken messages when using TTS */
@@ -384,6 +395,9 @@ public class MumlaService extends HumlaService implements
             e.printStackTrace();
         }
 
+        stopPTTMediaSession();
+        releasePTTWakeLock();
+
         unregisterObserver(mObserver);
         if(mTTS != null) mTTS.shutdown();
         mMessageLog = null;
@@ -421,6 +435,9 @@ public class MumlaService extends HumlaService implements
             registerReceiver(mTalkReceiver, new IntentFilter(TalkBroadcastReceiver.BROADCAST_TALK));
         }
 
+        startPTTMediaSession();
+        acquirePTTWakeLock();
+
         if (mSettings.isHotCornerEnabled()) {
             mHotCorner.setShown(true);
         }
@@ -448,6 +465,9 @@ public class MumlaService extends HumlaService implements
             unregisterReceiver(mTalkReceiver);
         } catch (IllegalArgumentException iae) {
         }
+
+        stopPTTMediaSession();
+        releasePTTWakeLock();
 
         // Remove overlay if present.
         mChannelOverlay.hide();
@@ -562,6 +582,70 @@ public class MumlaService extends HumlaService implements
         } else {
             if(mProximityLock != null) mProximityLock.release();
             mProximityLock = null;
+        }
+    }
+
+    /**
+     * Registers a {@link MediaSession} so that Android routes hardware PTT key events (including
+     * {@link KeyEvent#KEYCODE_PTT}) to this service even when the app is in the background or the
+     * screen is off.  Android 5.0+ dispatches media-session keys to the most recently active
+     * session rather than broadcasting them, so registering here gives us reliable priority over
+     * other apps.
+     */
+    private void startPTTMediaSession() {
+        if (mMediaSession != null) return;
+        mMediaSession = new MediaSession(this, TAG);
+        mMediaSession.setCallback(new MediaSession.Callback() {
+            @Override
+            public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                KeyEvent keyEvent = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                int configuredKey = mSettings.getPushToTalkKey();
+                if (keyEvent != null
+                        && configuredKey != Settings.DEFAULT_PUSH_KEY
+                        && keyEvent.getKeyCode() == configuredKey) {
+                    if (keyEvent.getAction() == KeyEvent.ACTION_DOWN) {
+                        onTalkKeyDown();
+                    } else if (keyEvent.getAction() == KeyEvent.ACTION_UP) {
+                        onTalkKeyUp();
+                    }
+                    return true;
+                }
+                return super.onMediaButtonEvent(mediaButtonIntent);
+            }
+        });
+        // A non-idle playback state is required for Android to route media button events here.
+        PlaybackState state = new PlaybackState.Builder()
+                .setActions(PlaybackState.ACTION_PLAY_PAUSE)
+                .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f)
+                .build();
+        mMediaSession.setPlaybackState(state);
+        mMediaSession.setActive(true);
+    }
+
+    private void stopPTTMediaSession() {
+        if (mMediaSession != null) {
+            mMediaSession.setActive(false);
+            mMediaSession.release();
+            mMediaSession = null;
+        }
+    }
+
+    /**
+     * Acquires a partial wake lock so the CPU remains awake while connected.  This ensures that
+     * PTT key events delivered via the {@link MediaSession} can be processed even when the screen
+     * is off.
+     */
+    private void acquirePTTWakeLock() {
+        if (mPTTWakeLock != null) return;
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        mPTTWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Mumla:PTTBackground");
+        mPTTWakeLock.acquire();
+    }
+
+    private void releasePTTWakeLock() {
+        if (mPTTWakeLock != null) {
+            if (mPTTWakeLock.isHeld()) mPTTWakeLock.release();
+            mPTTWakeLock = null;
         }
     }
 
