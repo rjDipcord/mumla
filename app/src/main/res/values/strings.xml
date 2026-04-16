@@ -238,4 +238,8 @@
 
     <!-- Used only by flavor "foss" -->
     <string name="donate_foss">Donate</string>
+
+    <!-- PTT accessibility service (Settings → Accessibility → Mumla PTT) -->
+    <string name="ptt_accessibility_label">Mumla PTT</string>
+    <string name="ptt_accessibility_description">Allows Mumla to receive PTT button presses when the app is in the background or the screen is off.</string>
 </resources>
