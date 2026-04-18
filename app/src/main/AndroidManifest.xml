@@ -107,6 +107,22 @@
                 android:resource="@xml/ptt_accessibility_service" />
         </service>
 
+        <!--
+          Manifest-registered receiver for hardware PTT broadcasts sent by TID/Unipro and
+          Zello-compatible walkie-talkie firmware.  These devices broadcast PTT events before
+          normal input dispatch, so they are received here even when the app is backgrounded.
+        -->
+        <receiver
+            android:name=".service.PTTBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="unipro.hotkey.ptt.down" />
+                <action android:name="unipro.hotkey.ptt.up" />
+                <action android:name="com.zello.ptt.down" />
+                <action android:name="com.zello.ptt.up" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".app.MumlaActivity"
             android:label="@string/app_name"
