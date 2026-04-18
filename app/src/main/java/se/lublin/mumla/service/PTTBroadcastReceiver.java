@@ -30,17 +30,12 @@ import se.lublin.mumla.Settings;
  * {@code PhoneWindowManager.interceptKeyBeforeQueueing()} and broadcasts the events before normal
  * input dispatch, so {@link PTTAccessibilityService} never sees the key presses.
  *
- * <p>The dedicated PTT button (F5 / KEYCODE_F5) always triggers PTT via:
+ * <p>Each broadcast is only forwarded if the user has assigned the matching key code in
+ * Settings → Push-to-talk key.  Supported broadcast → keycode mappings:
  * <ul>
- *   <li>{@code unipro.hotkey.ptt.down} / {@code unipro.hotkey.ptt.up} — TID/Unipro firmware</li>
- *   <li>{@code com.zello.ptt.down} / {@code com.zello.ptt.up} — Zello-compatible firmware</li>
- * </ul>
- *
- * <p>The two programmable side keys are only forwarded as PTT if the user has configured the
- * matching key code in Settings → Push-to-talk key:
- * <ul>
- *   <li>{@code unipro.hotkey.help.down} / {@code unipro.hotkey.help.up} — F3 / KEYCODE_F3 (133)</li>
- *   <li>{@code unipro.hotkey.p2.down}   / {@code unipro.hotkey.p2.up}   — F4 / KEYCODE_F4 (134)</li>
+ *   <li>{@code unipro.hotkey.ptt.*} / {@code com.zello.ptt.*} → KEYCODE_F5 (135) — large PTT button</li>
+ *   <li>{@code unipro.hotkey.help.*} → KEYCODE_F3 (133) — upper side key</li>
+ *   <li>{@code unipro.hotkey.p2.*}   → KEYCODE_F4 (134) — lower side key</li>
  * </ul>
  *
  * This receiver is declared in the manifest so it is invoked even when the app is in the
@@ -66,17 +61,16 @@ public class PTTBroadcastReceiver extends BroadcastReceiver {
 
         String serviceAction;
         switch (action) {
-            // Dedicated PTT button (F5) — always active.
             case ACTION_UNIPRO_PTT_DOWN:
             case ACTION_ZELLO_PTT_DOWN:
+                if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F5)) return;
                 serviceAction = MumlaService.ACTION_PTT_DOWN;
                 break;
             case ACTION_UNIPRO_PTT_UP:
             case ACTION_ZELLO_PTT_UP:
+                if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F5)) return;
                 serviceAction = MumlaService.ACTION_PTT_UP;
                 break;
-
-            // F3 side key — only active when the user has assigned KEYCODE_F3 (133) as PTT.
             case ACTION_UNIPRO_HELP_DOWN:
                 if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F3)) return;
                 serviceAction = MumlaService.ACTION_PTT_DOWN;
@@ -85,8 +79,6 @@ public class PTTBroadcastReceiver extends BroadcastReceiver {
                 if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F3)) return;
                 serviceAction = MumlaService.ACTION_PTT_UP;
                 break;
-
-            // F4 side key — only active when the user has assigned KEYCODE_F4 (134) as PTT.
             case ACTION_UNIPRO_P2_DOWN:
                 if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F4)) return;
                 serviceAction = MumlaService.ACTION_PTT_DOWN;
@@ -95,7 +87,6 @@ public class PTTBroadcastReceiver extends BroadcastReceiver {
                 if (!isPttKeyConfigured(context, KeyEvent.KEYCODE_F4)) return;
                 serviceAction = MumlaService.ACTION_PTT_UP;
                 break;
-
             default:
                 return;
         }
